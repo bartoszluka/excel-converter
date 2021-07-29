@@ -10,18 +10,32 @@ let newRow ean count = { Ean = ean; Count = count }
 // let displayRow row =
 //     printfn "Address %s Value: %s" row.Ean row.Count
 
-let rec splitWhen (f: 'a -> 'a -> bool) (l: list<'a>) =
-    if (List.isEmpty l) then
-        []
+let splitWhen (f: 'a -> 'a -> bool) (list: list<'a>) =
+    if (List.isEmpty list) then
+        ([], [])
 
     else
-        let helper pair = not (f (fst pair) (snd pair))
+        let helper pair = f (fst pair) (snd pair)
 
         let firstIndex =
-            l |> List.pairwise |> List.findIndex helper
+            list |> List.pairwise |> List.tryFindIndex helper
 
-        List.splitAt firstIndex l
-        |> (fun pair -> fst pair :: splitWhen f (snd pair))
+        match (firstIndex) with
+        | None -> (list, [])
+        | Some n -> List.splitAt (if n = 0 then 0 else n + 1) list
+// |> (fun pair -> fst pair :: splitWhen f (snd pair))
+
+let printListOfLists listOfLists =
+    List.iter (fun (list: 'a list) -> printfn "%A" list) listOfLists
+
+
+let rec splitList f list =
+    match splitWhen f list with
+    | ([], []) -> []
+    | ([], _) -> []
+    | (a, []) -> [ a ]
+    | (a, b) -> a :: splitList f b
+
 
 let getTableBorder (upperBound: int) (cells: Dictionary<string, Cell>) =
     let addA (n: int) = "A" + string n
@@ -35,16 +49,14 @@ let getTableBorder (upperBound: int) (cells: Dictionary<string, Cell>) =
         |> fun (cell: Cell) -> string cell.Value <> "LP."
 
     let contains =
-        [ 1 .. upperBound ] |> List.map containsKey
+        [ 1 .. upperBound ]
+        |> List.map (fun item -> containsKey item && isNotHeader item)
 
     List.zip [ 1 .. upperBound ] (contains)
     |> List.filter snd
     |> List.map fst
-    // |> splitWhen (fun m n -> m + 1 = n)
-    // |> List.pairwise
-    // |> List.takeWhile (fun pair -> (fst pair) + 1 = (snd pair))
-    // |> List.map snd
-    |> printfn "%A"
+    |> splitList (fun m n -> m + 1 <> n)
+    |> printListOfLists
 
 
 
