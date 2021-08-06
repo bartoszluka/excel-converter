@@ -7,8 +7,8 @@ type Row = { Ean: string; Count: int }
 
 let newRow ean count = { Ean = ean; Count = count }
 
-// let displayRow row =
-//     printfn "Address %s Value: %s" row.Ean row.Count
+let displayRow row =
+    printfn "Address %s Value: %d" row.Ean row.Count
 
 let splitWhen (f: 'a -> 'a -> bool) (list: list<'a>) =
     if (List.isEmpty list) then
@@ -36,28 +36,65 @@ let rec splitList f list =
     | (a, []) -> [ a ]
     | (a, b) -> a :: splitList f b
 
+let toRecords map (list: int list list) =
+    let letters =
+        [ "A"
+          "B"
+          "C"
+          "C"
+          "D"
+          "E"
+          "F"
+          "G"
+          "H"
+          "I"
+          "J"
+          "K" ]
 
-let getTableBorder (upperBound: int) (cells: Dictionary<string, Cell>) =
+
+    let getLetterForKey key header letter =
+        (Map.tryFind (letter + string header) map)
+        |> Option.bind
+            (fun item ->
+                if string item = key then
+                    Some letter
+                else
+                    None)
+
+    let firstHeader = list |> List.head |> List.head
+
+    // printfn "%A" (getLetterForKey "EAN" 12 "B")
+    // (Map.find "B12") |> string |> printfn "%A"
+    Map.iter (printfn "key: %s value %A") map
+// List.map (getLetterForKey "EAN" firstHeader) letters
+// |> List.tryFind Option.isSome
+// |> Option.flatten
+// |> printfn "%A"
+
+
+let flip f x y = f y x
+
+let getTableBorders (upperBound: int) (cells: Map<string, string>) =
     let addA (n: int) = "A" + string n
-    let containsKey n = n |> addA |> cells.ContainsKey
-    let getItem key : Cell = cells.Item key
+
+    let containsKey n = n |> addA |> flip Map.containsKey cells
 
     let isNotHeader n =
         n
         |> addA
-        |> getItem
-        |> fun (cell: Cell) -> string cell.Value <> "LP."
+        |> flip Map.find cells
+        |> fun cell -> cell <> "LP."
 
     let contains =
         [ 1 .. upperBound ]
-        |> List.map (fun item -> containsKey item && isNotHeader item)
+        // |> List.map (fun item -> containsKey item && isNotHeader item)
+        |> List.map (fun item -> containsKey item)
 
     List.zip [ 1 .. upperBound ] (contains)
     |> List.filter snd
     |> List.map fst
     |> splitList (fun m n -> m + 1 <> n)
-    |> printListOfLists
-
+    |> toRecords cells
 
 
 
@@ -74,11 +111,19 @@ let readCells (cells: Dictionary<string, Cell>) =
     let count = cells.Item "F13"
     printfn "ean: %s ilosc %s" (string ean.Value) (string count.Value)
 
+let toMap dictionary =
+    (dictionary :> seq<_>)
+    |> Seq.map (|KeyValue|)
+    |> Map.ofSeq
+
 let readExcel (filename: string) =
     let wb = NanoXLSX.Workbook.Load(filename)
 
-    // let a =
-    getTableBorder (wb.CurrentWorksheet.GetLastRowNumber() + 1) wb.CurrentWorksheet.Cells
+    let map =
+        toMap wb.CurrentWorksheet.Cells
+        |> Map.map (fun _ (value: Cell) -> string value.Value)
+
+    getTableBorders (wb.CurrentWorksheet.GetLastRowNumber() + 1) map
 
 let convertExcel filename =
     let output = Path.ChangeExtension(filename, "xlsx")
@@ -95,8 +140,6 @@ let private usage = "expected one .xls file"
 
 [<EntryPoint>]
 let main argv =
-    // readExcel (Array.head argv)
-    // writeExcel (Array.head argv)
 
     if isNull argv || Array.length argv <> 1 then
         printfn "%s" usage
