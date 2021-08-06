@@ -8,7 +8,16 @@ type Row = { Ean: string; Count: int }
 let newRow ean count = { Ean = ean; Count = count }
 
 let displayRow row =
-    printfn "Address %s Value: %d" row.Ean row.Count
+    printfn "Ean %s Count: %d" row.Ean row.Count
+
+type Table = Rows of Row list
+
+let displayTable table =
+    let (Rows rows) = table
+    rows |> (List.iter displayRow)
+
+let displayTables tables = tables |> (List.iter displayTable)
+
 
 let splitWhen (f: 'a -> 'a -> bool) (list: list<'a>) =
     if (List.isEmpty list) then
@@ -35,6 +44,10 @@ let rec splitList f list =
     | ([], _) -> []
     | (a, []) -> [ a ]
     | (a, b) -> a :: splitList f b
+
+let createTable pairsList =
+    pairsList
+    |> List.map (fun pair -> newRow (fst pair) (snd pair))
 
 let toRecords map (list: int list list) =
     let letters =
@@ -65,11 +78,29 @@ let toRecords map (list: int list list) =
 
     // printfn "%A" (getLetterForKey "EAN" 12 "B")
     // (Map.find "B12") |> string |> printfn "%A"
-    Map.iter (printfn "key: %s value %A") map
-// List.map (getLetterForKey "EAN" firstHeader) letters
-// |> List.tryFind Option.isSome
-// |> Option.flatten
-// |> printfn "%A"
+    // Map.iter (printfn "key: %s value %A") map
+    let findLetter key =
+        List.map (getLetterForKey key firstHeader) letters
+        |> List.tryFind Option.isSome
+        |> Option.flatten
+
+    let maybeEan = findLetter "EAN" //B
+    let maybeCount = findLetter "ILOSC" //F
+
+    let getValues eanHeader countHeader (rowNumbers: int list) =
+        rowNumbers
+        |> List.map
+            (fun item -> ((Map.find (eanHeader + string item) map), int (Map.find (countHeader + string item) map)))
+
+    let noHeaders = list |> List.map List.tail
+
+    match maybeEan, maybeCount with
+    | None, _ -> ()
+    | _, None -> ()
+    | Some ean, Some count ->
+        noHeaders
+        |> List.map ((getValues ean count) >> createTable >> Rows)
+        |> displayTables
 
 
 let flip f x y = f y x
