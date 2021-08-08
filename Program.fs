@@ -95,12 +95,13 @@ let toRecords map (list: int list list) =
     let noHeaders = list |> List.map List.tail
 
     match maybeEan, maybeCount with
-    | None, _ -> ()
-    | _, None -> ()
+    | None, _ -> None
+    | _, None -> None
     | Some ean, Some count ->
         noHeaders
         |> List.map ((getValues ean count) >> createTable >> Rows)
-        |> displayTables
+        |> Some
+// |> displayTables
 
 
 let flip f x y = f y x
@@ -163,18 +164,119 @@ let convertExcel filename =
     workbook.SaveToFile(output, Spire.Xls.ExcelVersion.Version2013)
     output
 
-let writeExcel (filename: string) =
-    let wb = Workbook(filename, "arkusz 1")
-    wb.Save()
+let writeExcel (filename: string) (tables: Table list) =
+    let addRow (wb: Workbook) (row: Row) : unit =
+        wb.CurrentWorksheet.AddNextCell(row.Ean)
+        wb.CurrentWorksheet.AddNextCell(row.Count)
+        wb.CurrentWorksheet.GoToNextRow()
+        wb.Save()
+
+    let createFile index table =
+        let wb =
+            Workbook(filename + (string index) + ".xlsx", "arkusz1")
+
+        wb.CurrentWorksheet.AddNextCell("KOD")
+        wb.CurrentWorksheet.AddNextCell("ILOŚĆ")
+        wb.CurrentWorksheet.AddNextCell("jm")
+        wb.CurrentWorksheet.GoToNextRow()
+
+        let (Rows rows) = table
+        rows |> List.iter (addRow wb)
+
+    tables |> List.iteri createFile
 
 let private usage = "expected one .xls file"
+
+// let removeKeys keys map =
+//     Map.filter (fun key _ -> not <| List.contains key keys) map
+
+// let convertExcel2 filename =
+//     let output = filename + "_copy"
+//     use workbook = new Spire.Xls.Workbook()
+//     workbook.LoadFromFile filename
+//     workbook.SaveToFile(output, Spire.Xls.ExcelVersion.Version2016)
+//     output
+
+// let readDictionary (filename: string) =
+//     let workSheet =
+//         NanoXLSX.Workbook.Load(filename).CurrentWorksheet
+
+//     let cells = workSheet.Cells
+//     let upperBound = workSheet.GetLastRowNumber() + 1
+
+//     let changeCellType (cell: Cell) =
+//         // cell.DataType <- Cell.CellType.STRING
+//         string cell.Value
+
+//     let map =
+//         cells
+//         |> toMap
+//         |> Map.map (fun _ (value: Cell) -> changeCellType value)
+
+//     let headers =
+//         List.allPairs [ "A"; "B"; "C"; "D"; "E"; "F" ] [ 1 .. 2 ]
+//         |> List.map (fun pair -> fst pair + string (snd pair))
+
+//     let firstColumns =
+//         List.allPairs [ "A"; "B" ] [ 3 .. upperBound ]
+//         |> List.map (fun pair -> fst pair + string (snd pair))
+
+//     cells.Values
+//       |> removeKeys headers
+//       |> removeKeys firstColumns
+
+let printMap map =
+    map
+    |> Map.iter (fun key value -> printfn "(%s: %s)" key value)
+
+let printSeq seq =
+    seq |> Seq.iter (fun value -> printfn "%s" value)
+
+let printCells cells =
+    cells
+    |> Seq.iter (fun (value: Cell) -> printfn "%s" (string value.Value))
+
+let createDictionary (filename: string) =
+    let lineToPair (line: string) =
+        line.Split '\t'
+        |> fun array -> (array.[0], array.[1])
+
+    File.ReadAllLines filename
+    |> Array.tail
+    |> Array.map lineToPair
+    |> Map.ofArray
+
+
+let replaceNames dict table =
+    let updateRow row maybeEan =
+        match maybeEan with
+        | None -> row
+        | Some ean -> { row with Ean = ean }
+
+    let (Rows rows) = table
+
+    rows
+    |> List.map (fun row -> Map.tryFind row.Ean dict |> updateRow row)
+    |> Rows
+
 
 [<EntryPoint>]
 let main argv =
 
-    if isNull argv || Array.length argv <> 1 then
+    if isNull argv || Array.length argv <> 2 then
         printfn "%s" usage
         1
     else
-        convertExcel (Array.head argv) |> readExcel
+        let dict = createDictionary argv.[1]
+
+        let tables = argv.[0] |> convertExcel |> readExcel
+
+        match tables with
+        | None -> printfn "%s" "wrong format"
+        | Some t ->
+            t
+            |> List.map (replaceNames dict)
+            |> writeExcel "zmienione"
+
+
         0
