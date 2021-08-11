@@ -1,7 +1,8 @@
+module ExcelConverter
+
 open NanoXLSX
 open System.IO
 open System.Collections.Generic
-
 
 type Row = { Ean: string; Count: int }
 
@@ -32,11 +33,6 @@ let splitWhen (f: 'a -> 'a -> bool) (list: list<'a>) =
         match (firstIndex) with
         | None -> (list, [])
         | Some n -> List.splitAt (if n = 0 then 0 else n + 1) list
-// |> (fun pair -> fst pair :: splitWhen f (snd pair))
-
-let printListOfLists listOfLists =
-    List.iter (fun (list: 'a list) -> printfn "%A" list) listOfLists
-
 
 let rec splitList f list =
     match splitWhen f list with
@@ -120,7 +116,7 @@ let getTableBorders (upperBound: int) (cells: Map<string, string>) =
     let contains =
         [ 1 .. upperBound ]
         // |> List.map (fun item -> containsKey item && isNotHeader item)
-        |> List.map (fun item -> containsKey item)
+        |> List.map containsKey
 
     List.zip [ 1 .. upperBound ] (contains)
     |> List.filter snd
@@ -148,7 +144,7 @@ let toMap dictionary =
     |> Seq.map (|KeyValue|)
     |> Map.ofSeq
 
-let readExcel (filename: string) =
+let excelToTables (filename: string) =
     let wb = NanoXLSX.Workbook.Load(filename)
 
     let map =
@@ -157,7 +153,7 @@ let readExcel (filename: string) =
 
     getTableBorders (wb.CurrentWorksheet.GetLastRowNumber() + 1) map
 
-let convertExcel filename =
+let excelOldToNew filename =
     let output = Path.ChangeExtension(filename, "xlsx")
     use workbook = new Spire.Xls.Workbook()
     workbook.LoadFromFile filename
@@ -169,11 +165,10 @@ let writeExcel (filename: string) (tables: Table list) =
         wb.CurrentWorksheet.AddNextCell(row.Ean)
         wb.CurrentWorksheet.AddNextCell(row.Count)
         wb.CurrentWorksheet.GoToNextRow()
-        wb.Save()
 
     let createFile index table =
-        let wb =
-            Workbook(filename + (string index) + ".xlsx", "arkusz1")
+        let createdFileName = filename + (string index) + ".xlsx"
+        let wb = Workbook(createdFileName, "arkusz1")
 
         wb.CurrentWorksheet.AddNextCell("KOD")
         wb.CurrentWorksheet.AddNextCell("ILOŚĆ")
@@ -182,8 +177,11 @@ let writeExcel (filename: string) (tables: Table list) =
 
         let (Rows rows) = table
         rows |> List.iter (addRow wb)
+        wb.Save()
+        createdFileName
 
-    tables |> List.iteri createFile
+
+    tables |> List.mapi createFile
 
 let private usage = "expected one .xls file"
 
@@ -225,16 +223,16 @@ let private usage = "expected one .xls file"
 //       |> removeKeys headers
 //       |> removeKeys firstColumns
 
-let printMap map =
-    map
-    |> Map.iter (fun key value -> printfn "(%s: %s)" key value)
+// let printMap map =
+//     map
+//     |> Map.iter (fun key value -> printfn "(%s: %s)" key value)
 
-let printSeq seq =
-    seq |> Seq.iter (fun value -> printfn "%s" value)
+// let printSeq seq =
+//     seq |> Seq.iter (fun value -> printfn "%s" value)
 
-let printCells cells =
-    cells
-    |> Seq.iter (fun (value: Cell) -> printfn "%s" (string value.Value))
+// let printCells cells =
+//     cells
+//     |> Seq.iter (fun (value: Cell) -> printfn "%s" (string value.Value))
 
 let createDictionary (filename: string) =
     let lineToPair (line: string) =
@@ -259,24 +257,31 @@ let replaceNames dict table =
     |> List.map (fun row -> Map.tryFind row.Ean dict |> updateRow row)
     |> Rows
 
+let convert inputFile inputDict =
+    let dict = createDictionary inputDict
+    let converted = inputFile |> excelOldToNew
+    let tables = converted |> excelToTables
 
-[<EntryPoint>]
-let main argv =
-
-    if isNull argv || Array.length argv <> 2 then
-        printfn "%s" usage
-        1
-    else
-        let dict = createDictionary argv.[1]
-
-        let tables = argv.[0] |> convertExcel |> readExcel
-
+    let outFiles =
         match tables with
-        | None -> printfn "%s" "wrong format"
+        | None -> [ "wrong format" ]
         | Some t ->
             t
             |> List.map (replaceNames dict)
             |> writeExcel "zmienione"
 
+    File.Delete converted |> ignore
+    outFiles
 
-        0
+
+
+// [<EntryPoint>]
+// let main argv =
+
+//     if isNull argv || Array.length argv <> 2 then
+//         printfn "%s" usage
+//         1
+//     else
+//         convert argv.[0] argv.[1] |> ignore
+
+//         0
