@@ -160,15 +160,19 @@ let excelOldToNew filename =
     workbook.SaveToFile(output, Spire.Xls.ExcelVersion.Version2013)
     output
 
-let writeExcel (filename: string) (tables: Table list) =
+let writeExcel (filename: string) directoryName (tables: Table list) =
     let addRow (wb: Workbook) (row: Row) : unit =
         wb.CurrentWorksheet.AddNextCell(row.Ean)
         wb.CurrentWorksheet.AddNextCell(row.Count)
         wb.CurrentWorksheet.GoToNextRow()
 
+    let directory = Directory.CreateDirectory directoryName
+
     let createFile index table =
-        let createdFileName = filename + (string index) + ".xlsx"
-        let wb = Workbook(createdFileName, "arkusz1")
+        let createdFileName =
+            sprintf "%s/%s.xlsx" (directory.FullName) (filename + (string (1 + index)))
+
+        let wb = Workbook(createdFileName, "Arkusz 1")
 
         wb.CurrentWorksheet.AddNextCell("KOD")
         wb.CurrentWorksheet.AddNextCell("ILOŚĆ")
@@ -180,10 +184,8 @@ let writeExcel (filename: string) (tables: Table list) =
         wb.Save()
         createdFileName
 
-
     tables |> List.mapi createFile
 
-let private usage = "expected one .xls file"
 
 // let removeKeys keys map =
 //     Map.filter (fun key _ -> not <| List.contains key keys) map
@@ -235,6 +237,7 @@ let private usage = "expected one .xls file"
 //     |> Seq.iter (fun (value: Cell) -> printfn "%s" (string value.Value))
 
 let createDictionary (filename: string) =
+    // try
     let lineToPair (line: string) =
         line.Split '\t'
         |> fun array -> (array.[0], array.[1])
@@ -243,9 +246,15 @@ let createDictionary (filename: string) =
     |> Array.tail
     |> Array.map lineToPair
     |> Map.ofArray
+//     |> Ok
+// with
+// | :? System.IndexOutOfRangeException -> Error "wrong format for the dictionary"
+// | :? IOException -> "cannot read file " + filename |> Error
+// | _ -> Error "some other error idk"
 
 
-let replaceNames dict table =
+
+let replaceNames map table =
     let updateRow row maybeEan =
         match maybeEan with
         | None -> row
@@ -254,7 +263,7 @@ let replaceNames dict table =
     let (Rows rows) = table
 
     rows
-    |> List.map (fun row -> Map.tryFind row.Ean dict |> updateRow row)
+    |> List.map (fun row -> Map.tryFind row.Ean map |> updateRow row)
     |> Rows
 
 let convert inputFile inputDict =
@@ -262,18 +271,22 @@ let convert inputFile inputDict =
     let converted = inputFile |> excelOldToNew
     let tables = converted |> excelToTables
 
+    let directory = Path.GetDirectoryName inputFile
+
     let outFiles =
         match tables with
-        | None -> [ "wrong format" ]
+        | None -> Error "wrong format"
         | Some t ->
             t
             |> List.map (replaceNames dict)
-            |> writeExcel "zmienione"
+            |> writeExcel "zmienione" (directory + "/zamienione")
+            |> Ok
 
     File.Delete converted |> ignore
     outFiles
 
 
+//let private usage = "expected one .xls file"
 
 // [<EntryPoint>]
 // let main argv =
