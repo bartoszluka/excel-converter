@@ -1,6 +1,7 @@
 module ExcelConverter
 
 open NanoXLSX
+open System
 open System.IO
 open System.Collections.Generic
 
@@ -18,6 +19,12 @@ let displayTable (Rows rows) = rows |> (List.iter displayRow)
 let displayTables tables = tables |> (List.iter displayTable)
 
 let unPair f (x, y) = f x y
+
+let letters charFrom charTo =
+    [ Char.ToUpper charFrom .. Char.ToUpper charTo ]
+    |> List.map string
+
+let lettersTo = letters 'A'
 
 let splitWhen (f: 'a -> 'a -> bool) (list: list<'a>) =
     if (List.isEmpty list) then
@@ -45,7 +52,7 @@ let createTable =
     List.map (fun (ean, count) -> newRow ean count)
 
 let toRecords dict (list: int list list) =
-    let letters = [ 'A' .. 'K' ] |> List.map string
+    let letters = lettersTo 'F'
 
 
     let getLetterForKey key header letter =
@@ -167,7 +174,6 @@ let writeExcel (filename: string) directoryName (tables: Table list) =
 
     tables |> List.mapi createFile
 
-
 // let removeKeys keys map =
 //     Map.filter (fun key _ -> not <| List.contains key keys) map
 
@@ -195,7 +201,7 @@ let writeExcel (filename: string) directoryName (tables: Table list) =
 //         |> Map.map (fun _ (value: Cell) -> changeCellType value)
 
 //     let headers =
-//         List.allPairs [ "A"; "B"; "C"; "D"; "E"; "F" ] [ 1 .. 2 ]
+//         List.allPairs [ 'A' .. 'F' ] [ 1 .. 2 ]
 //         |> List.map (fun pair -> fst pair + string (snd pair))
 
 //     let firstColumns =
@@ -261,5 +267,5 @@ let convert inputFile inputDict =
             |> writeExcel "zmienione" (directory + "/zamienione")
             |> Ok
 
-    File.Delete converted |> ignore
+    File.Delete converted
     outFiles
