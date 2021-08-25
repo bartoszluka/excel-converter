@@ -13,24 +13,24 @@ let displayRow row =
 
 type Table = Rows of Row list
 
-let displayTable table =
-    let (Rows rows) = table
-    rows |> (List.iter displayRow)
+let displayTable (Rows rows) = rows |> (List.iter displayRow)
 
 let displayTables tables = tables |> (List.iter displayTable)
 
+let unPair f (x, y) = f x y
 
 let splitWhen (f: 'a -> 'a -> bool) (list: list<'a>) =
     if (List.isEmpty list) then
         ([], [])
 
     else
-        let helper pair = f (fst pair) (snd pair)
 
         let firstIndex =
-            list |> List.pairwise |> List.tryFindIndex helper
+            list
+            |> List.pairwise
+            |> List.tryFindIndex (unPair f)
 
-        match (firstIndex) with
+        match firstIndex with
         | None -> (list, [])
         | Some n -> List.splitAt (if n = 0 then 0 else n + 1) list
 
@@ -41,28 +41,15 @@ let rec splitList f list =
     | (a, []) -> [ a ]
     | (a, b) -> a :: splitList f b
 
-let createTable pairsList =
-    pairsList
-    |> List.map (fun pair -> newRow (fst pair) (snd pair))
+let createTable =
+    List.map (fun (ean, count) -> newRow ean count)
 
-let toRecords map (list: int list list) =
-    let letters =
-        [ "A"
-          "B"
-          "C"
-          "C"
-          "D"
-          "E"
-          "F"
-          "G"
-          "H"
-          "I"
-          "J"
-          "K" ]
+let toRecords dict (list: int list list) =
+    let letters = [ 'A' .. 'K' ] |> List.map string
 
 
     let getLetterForKey key header letter =
-        (Map.tryFind (letter + string header) map)
+        (Map.tryFind (letter + string header) dict)
         |> Option.bind
             (fun item ->
                 if string item = key then
@@ -72,9 +59,6 @@ let toRecords map (list: int list list) =
 
     let firstHeader = list |> List.head |> List.head
 
-    // printfn "%A" (getLetterForKey "EAN" 12 "B")
-    // (Map.find "B12") |> string |> printfn "%A"
-    // Map.iter (printfn "key: %s value %A") map
     let findLetter key =
         List.map (getLetterForKey key firstHeader) letters
         |> List.tryFind Option.isSome
@@ -86,18 +70,16 @@ let toRecords map (list: int list list) =
     let getValues eanHeader countHeader (rowNumbers: int list) =
         rowNumbers
         |> List.map
-            (fun item -> ((Map.find (eanHeader + string item) map), int (Map.find (countHeader + string item) map)))
+            (fun item -> ((Map.find (eanHeader + string item) dict), int (Map.find (countHeader + string item) dict)))
 
     let noHeaders = list |> List.map List.tail
 
     match maybeEan, maybeCount with
-    | None, _ -> None
-    | _, None -> None
     | Some ean, Some count ->
         noHeaders
         |> List.map ((getValues ean count) >> createTable >> Rows)
         |> Some
-// |> displayTables
+    | _ -> None
 
 
 let flip f x y = f y x
@@ -157,7 +139,7 @@ let excelOldToNew filename =
     let output = Path.ChangeExtension(filename, "xlsx")
     use workbook = new Spire.Xls.Workbook()
     workbook.LoadFromFile filename
-    workbook.SaveToFile(output, Spire.Xls.ExcelVersion.Version2013)
+    workbook.SaveToFile(output, Spire.Xls.ExcelVersion.Version2016)
     output
 
 let writeExcel (filename: string) directoryName (tables: Table list) =
@@ -168,7 +150,7 @@ let writeExcel (filename: string) directoryName (tables: Table list) =
 
     let directory = Directory.CreateDirectory directoryName
 
-    let createFile index table =
+    let createFile index (Rows rows) =
         let createdFileName =
             sprintf "%s/%s.xlsx" (directory.FullName) (filename + (string (1 + index)))
 
@@ -179,7 +161,6 @@ let writeExcel (filename: string) directoryName (tables: Table list) =
         wb.CurrentWorksheet.AddNextCell("jm")
         wb.CurrentWorksheet.GoToNextRow()
 
-        let (Rows rows) = table
         rows |> List.iter (addRow wb)
         wb.Save()
         createdFileName
@@ -254,13 +235,11 @@ let createDictionary (filename: string) =
 
 
 
-let replaceNames map table =
+let replaceNames map (Rows rows) =
     let updateRow row maybeEan =
         match maybeEan with
         | None -> row
         | Some ean -> { row with Ean = ean }
-
-    let (Rows rows) = table
 
     rows
     |> List.map (fun row -> Map.tryFind row.Ean map |> updateRow row)
@@ -284,17 +263,3 @@ let convert inputFile inputDict =
 
     File.Delete converted |> ignore
     outFiles
-
-
-//let private usage = "expected one .xls file"
-
-// [<EntryPoint>]
-// let main argv =
-
-//     if isNull argv || Array.length argv <> 2 then
-//         printfn "%s" usage
-//         1
-//     else
-//         convert argv.[0] argv.[1] |> ignore
-
-//         0
