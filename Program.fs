@@ -49,8 +49,7 @@ let rec splitList f list =
     | (a, []) -> [ a ]
     | (a, b) -> a :: splitList f b
 
-let createTable =
-    List.map (fun (ean, count) -> newRow ean count)
+let createTable = List.map (unPair newRow)
 
 let toRecords dict (list: int list list) =
     let letters = lettersTo 'F'
@@ -151,6 +150,7 @@ let excelOldToNew filename =
     output
 
 let writeExcel (filename: string) directoryName (tables: Table list) =
+
     let addRow (wb: Workbook) (row: Row) : unit =
         wb.CurrentWorksheet.AddNextCell(row.Ean)
         wb.CurrentWorksheet.AddNextCell(row.Count)
@@ -162,7 +162,9 @@ let writeExcel (filename: string) directoryName (tables: Table list) =
         let createdFileName =
             sprintf "%s/%s.xlsx" (directory.FullName) (filename + (string (1 + index)))
 
-        let wb = Workbook(createdFileName, "Arkusz 1")
+
+        let wb =
+            Workbook(createdFileName, "Arkusz 1", WorkbookMetadata = Metadata(Application = "Microsoft Excel"))
 
         wb.CurrentWorksheet.AddNextCell("KOD")
         wb.CurrentWorksheet.AddNextCell("ILOŚĆ")
@@ -172,6 +174,7 @@ let writeExcel (filename: string) directoryName (tables: Table list) =
         rows |> List.iter (addRow wb)
         wb.Save()
         createdFileName
+
 
     tables |> List.mapi createFile
 
