@@ -3,7 +3,6 @@ module ExcelConverter
 open NanoXLSX
 open System
 open System.IO
-open System.Collections.Generic
 open ExcelDataReader
 
 type Row = { Ean: string; Count: int }
@@ -13,155 +12,114 @@ let newRow ean count = { Ean = ean; Count = count }
 let displayRow row =
     printfn "Ean %s Count: %d" row.Ean row.Count
 
-type Table = Rows of Row list
+type Table =
+    { NumerZamowienia: string
+      DataWystawienia: DateTime
+      Realizacja: DateTime
+      Waluta: string
+      WartoscNetto: float
+      FirmaNazwa: string
+      FirmaGln: string
+      PlatnikNazwa: string
+      PlatnikGln: string
+      KontrahentNazwa: string
+      KontrahentEan: string
+      Data: Row list }
 
-let displayTable (Rows rows) = rows |> (List.iter displayRow)
+let rowOfPair (ean, count) = { Ean = ean; Count = int count }
 
-let displayTables tables = tables |> (List.iter displayTable)
+let newTable (arr: string []) (rowData: (string * string) list) =
+    { NumerZamowienia = arr.[0]
+      DataWystawienia = DateTime.Parse arr.[1]
+      Realizacja = DateTime.Parse arr.[2]
+      Waluta = arr.[3]
+      WartoscNetto = float arr.[4]
+      FirmaNazwa = arr.[5]
+      FirmaGln = arr.[6]
+      PlatnikNazwa = arr.[7]
+      PlatnikGln = arr.[8]
+      KontrahentNazwa = arr.[9]
+      KontrahentEan = arr.[10]
+      Data = List.map rowOfPair rowData }
 
-let unPair f (x, y) = f x y
+let isRowEmpty (a, b, c) =
+    let isEmpty = (=) ""
+    isEmpty a && isEmpty b && isEmpty c
 
-let letters charFrom charTo =
-    [ Char.ToUpper charFrom .. Char.ToUpper charTo ]
-    |> List.map string
+let splitInTwo predicate input =
+    let rec splitInTwoHelper pred building rest =
+        match rest with
+        | [] -> (building, [])
+        | x :: xs when pred x -> List.rev building, xs
+        | x :: xs -> splitInTwoHelper pred (x :: building) xs
 
-let lettersTo = letters 'A'
+    splitInTwoHelper predicate [] input
 
-let splitWhen (f: 'a -> 'a -> bool) (list: list<'a>) =
-    if (List.isEmpty list) then
-        ([], [])
+let rec splitInput pred input =
+    match splitInTwo pred input with
+    | xs, [] -> [ List.rev xs ]
+    | xs, ys -> xs :: (splitInput pred ys)
 
-    else
+let createTable rawInput =
+    let (list1, list2) =
+        splitInTwo ((=) ("EAN", "NAZWA", "ILOSC")) rawInput
 
-        let firstIndex =
-            list
-            |> List.pairwise
-            |> List.tryFindIndex (unPair f)
+    let metadata =
+        list1
+        |> List.map (fun (_, value, _) -> value)
+        |> Array.ofList
 
-        match firstIndex with
-        | None -> (list, [])
-        | Some n -> List.splitAt (if n = 0 then 0 else n + 1) list
+    let rows =
+        list2 |> List.map (fun (x, _, y) -> (x, y))
 
-let rec splitList f list =
-    match splitWhen f list with
-    | ([], []) -> []
-    | ([], _) -> []
-    | (a, []) -> [ a ]
-    | (a, b) -> a :: splitList f b
+    newTable metadata rows
 
-let createTable = List.map (unPair newRow)
+let readExcelToSeq inputFile =
+    // this is necessary for .NET Core to work
+    Text.Encoding.RegisterProvider(Text.CodePagesEncodingProvider.Instance)
 
-let toRecords dict (list: int list list) =
-    let letters = lettersTo 'F'
+    // read input file into a data set
+    let dataSet =
+        ExcelReaderFactory
+            .CreateReader(File.Open(inputFile, FileMode.Open, FileAccess.Read))
+            .AsDataSet()
 
+    // convert data set into a sequence
+    seq {
+        for row in dataSet.Tables.[0].Rows do
+            let s index = string row.ItemArray.[index]
+            // this are columns B, C and F
+            yield (s 1, s 2, s 5)
+    }
 
-    let getLetterForKey key header letter =
-        (Map.tryFind (letter + string header) dict)
-        |> Option.bind
-            (fun item ->
-                if string item = key then
-                    Some letter
-                else
-                    None)
+let tablesFromExcel =
+    readExcelToSeq
+    >> List.ofSeq
+    >> splitInput isRowEmpty
+    >> List.map createTable
 
-    let firstHeader = list |> List.head |> List.head
-
-    let findLetter key =
-        List.map (getLetterForKey key firstHeader) letters
-        |> List.tryFind Option.isSome
-        |> Option.flatten
-
-    let maybeEan = findLetter "EAN" //B
-    let maybeCount = findLetter "ILOSC" //F
-
-    let getValues eanHeader countHeader (rowNumbers: int list) =
-        rowNumbers
-        |> List.map
-            (fun item -> ((Map.find (eanHeader + string item) dict), int (Map.find (countHeader + string item) dict)))
-
-    let noHeaders = list |> List.map List.tail
-
-    match maybeEan, maybeCount with
-    | Some ean, Some count ->
-        noHeaders
-        |> List.map ((getValues ean count) >> createTable >> Rows)
-        |> Some
-    | _ -> None
-
-
-let flip f x y = f y x
-
-let getTableBorders (upperBound: int) (cells: Map<string, string>) =
-    let addA (n: int) = "A" + string n
-
-    let containsKey n = n |> addA |> flip Map.containsKey cells
-
-    let isNotHeader n =
-        n
-        |> addA
-        |> flip Map.find cells
-        |> fun cell -> cell <> "LP."
-
-    let contains =
-        [ 1 .. upperBound ]
-        // |> List.map (fun item -> containsKey item && isNotHeader item)
-        |> List.map containsKey
-
-    List.zip [ 1 .. upperBound ] (contains)
-    |> List.filter snd
-    |> List.map fst
-    |> splitList (fun m n -> m + 1 <> n)
-    |> toRecords cells
-
-
-
-let cellInfo (cell: Cell) =
-    let value = cell.Value.ToString()
-    printfn "Address %s Value: %s " cell.CellAddress value
-
-let printAllCells cells =
-    Seq.iter (fun (pair: KeyValuePair<string, Cell>) -> cellInfo pair.Value) cells
-
-
-let readCells (cells: Dictionary<string, Cell>) =
-    let ean = cells.Item "B13"
-    let count = cells.Item "F13"
-    printfn "ean: %s ilosc %s" (string ean.Value) (string count.Value)
-
-let toMap dictionary =
-    (dictionary :> seq<_>)
-    |> Seq.map (|KeyValue|)
-    |> Map.ofSeq
-
-let excelToTables (filename: string) =
-    let wb = NanoXLSX.Workbook.Load(filename)
-
-    let map =
-        toMap wb.CurrentWorksheet.Cells
-        |> Map.map (fun _ (value: Cell) -> string value.Value)
-
-    getTableBorders (wb.CurrentWorksheet.GetLastRowNumber() + 1) map
-
-let excelOldToNew filename =
-    let output = Path.ChangeExtension(filename, "xlsx")
-    use workbook = new Spire.Xls.Workbook()
-    workbook.LoadFromFile filename
-    workbook.SaveToFile(output, Spire.Xls.ExcelVersion.Version2016)
-    output
-
-let writeExcel (filename: string) directoryName (tables: Table list) =
+let writeExcel directoryName (tables: Table list) =
 
     let addRow (wb: Workbook) (row: Row) : unit =
         wb.CurrentWorksheet.AddNextCell(row.Ean)
-        wb.CurrentWorksheet.AddNextCell(row.Count)
+        wb.CurrentWorksheet.AddNextCell(Cell(row.Count, Cell.CellType.NUMBER))
         wb.CurrentWorksheet.GoToNextRow()
 
     let directory = Directory.CreateDirectory directoryName
 
-    let createFile index (Rows rows) =
-        let createdFileName =
-            sprintf "%s/%s.xlsx" (directory.FullName) (filename + (string (1 + index)))
+    let createFile index table =
+        let fileName =
+            table.KontrahentNazwa
+            |> String.map
+                (function
+                | '/' -> ' '
+                | '\\' -> ' '
+                | notSpace -> notSpace)
 
+        // let createdFileName =
+        //     sprintf "%s/%s_%d.xlsx" (directory.FullName) fileName (index + 1)
+        let createdFileName =
+            sprintf "%s/%s.xlsx" (directory.FullName) fileName
 
         let wb =
             Workbook(createdFileName, "Arkusz 1", WorkbookMetadata = Metadata(Application = "Microsoft Excel"))
@@ -171,10 +129,9 @@ let writeExcel (filename: string) directoryName (tables: Table list) =
         wb.CurrentWorksheet.AddNextCell("jm")
         wb.CurrentWorksheet.GoToNextRow()
 
-        rows |> List.iter (addRow wb)
+        table.Data |> List.iter (addRow wb)
         wb.Save()
         createdFileName
-
 
     tables |> List.mapi createFile
 
@@ -196,31 +153,25 @@ let createDictionary (filename: string) =
 
     actualData |> Seq.skip 2 |> Map.ofSeq
 
-let replaceNames map (Rows rows) =
+let replaceNames map table =
     let updateRow row maybeEan =
         match maybeEan with
         | None -> row
         | Some ean -> { row with Ean = ean }
 
-    rows
+    let updateTable table newData = { table with Data = newData }
+
+    table.Data
     |> List.map (fun row -> Map.tryFind row.Ean map |> updateRow row)
-    |> Rows
+    |> updateTable table
 
 let convert inputFile inputDict =
     let dict = createDictionary inputDict
-    let converted = inputFile |> excelOldToNew
-    let tables = converted |> excelToTables
+    let tables = tablesFromExcel inputFile
 
     let directory = Path.GetDirectoryName inputFile
 
-    let outFiles =
-        match tables with
-        | None -> Error "wrong format"
-        | Some t ->
-            t
-            |> List.map (replaceNames dict)
-            |> writeExcel "zmienione" (directory + "/zamienione")
-            |> Ok
-
-    File.Delete converted
-    outFiles
+    tables
+    |> List.map (replaceNames dict)
+    |> writeExcel (directory + "/zamienione")
+    |> Ok
