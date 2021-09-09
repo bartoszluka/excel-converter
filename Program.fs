@@ -9,9 +9,6 @@ type Row = { Ean: string; Count: int }
 
 let newRow ean count = { Ean = ean; Count = count }
 
-let displayRow row =
-    printfn "Ean %s Count: %d" row.Ean row.Count
-
 type Table =
     { NumerZamowienia: string
       DataWystawienia: DateTime
@@ -46,35 +43,34 @@ let isRowEmpty (a, b, c) =
     let isEmpty = (=) ""
     isEmpty a && isEmpty b && isEmpty c
 
-let splitInTwo predicate input =
-    let rec splitInTwoHelper pred building rest =
-        match rest with
-        | [] -> (building, [])
-        | x :: xs when pred x -> List.rev building, xs
-        | x :: xs -> splitInTwoHelper pred (x :: building) xs
-
-    splitInTwoHelper predicate [] input
+let rec splitInTwo pred =
+    function
+    | [] -> ([], [])
+    | x :: xs when pred x -> [], xs
+    | x :: xs ->
+        let (splitPart, rest) = splitInTwo pred xs
+        (x :: splitPart, rest)
 
 let rec splitInput pred input =
     match splitInTwo pred input with
-    | xs, [] -> [ List.rev xs ]
+    | xs, [] -> [ xs ]
     | xs, ys -> xs :: (splitInput pred ys)
 
 let createTable rawInput =
     let (list1, list2) =
         splitInTwo ((=) ("EAN", "NAZWA", "ILOSC")) rawInput
 
-    let metadata =
-        list1
-        |> List.map (fun (_, value, _) -> value)
-        |> Array.ofList
+    let takeMiddle (_, x, _) = x
+    let skipMiddle (x, _, y) = (x, y)
 
-    let rows =
-        list2 |> List.map (fun (x, _, y) -> (x, y))
+    let metadata =
+        list1 |> List.map takeMiddle |> Array.ofList
+
+    let rows = list2 |> List.map skipMiddle
 
     newTable metadata rows
 
-let readExcelToSeq inputFile =
+let readExcelToSeq column1 column2 column3 inputFile =
     // this is necessary for .NET Core to work
     Text.Encoding.RegisterProvider(Text.CodePagesEncodingProvider.Instance)
 
@@ -84,19 +80,71 @@ let readExcelToSeq inputFile =
             .CreateReader(File.Open(inputFile, FileMode.Open, FileAccess.Read))
             .AsDataSet()
 
+    let toIndex char = int (Char.ToUpper char) - int 'A'
+
     // convert data set into a sequence
     seq {
         for row in dataSet.Tables.[0].Rows do
-            let s index = string row.ItemArray.[index]
-            // this are columns B, C and F
-            yield (s 1, s 2, s 5)
+            let s letter = string row.ItemArray.[toIndex letter]
+            yield (s column1, s column2, s column3)
     }
 
 let tablesFromExcel =
-    readExcelToSeq
+    readExcelToSeq 'B' 'C' 'F'
     >> List.ofSeq
     >> splitInput isRowEmpty
     >> List.map createTable
+
+let normalizeWhiteSpace input =
+    let toCharList =
+        function
+        | str when String.IsNullOrEmpty str -> []
+        | str -> str.ToCharArray() |> List.ofArray
+
+    let foldr folder list state = List.foldBack folder state list
+    let lastChar (str: string) = str.[str.Length - 1]
+
+    let bothWhiteSpace x y =
+        Char.IsWhiteSpace x && Char.IsWhiteSpace y
+
+    match toCharList input with
+    | [] -> ""
+    | first :: rest ->
+        string first
+        + (first :: rest
+           |> List.pairwise
+           |> List.fold
+               (fun acc (x, y) ->
+                   if bothWhiteSpace x y then
+                       acc
+                   else
+                       acc + (string y))
+               "")
+
+let replaceForbiddenWith c =
+    let forbiddenChars =
+        [ '<'
+          '>'
+          ':'
+          '\"'
+          '/'
+          '\\'
+          '|'
+          '?'
+          '*' ]
+
+    let inline (?<) item list = List.contains item list
+
+    let (|Forbidden|Safe|) char =
+        if char ?< forbiddenChars then
+            Forbidden char
+        else
+            Safe char
+
+    String.map
+        (function
+        | Forbidden _ -> c
+        | Safe char -> char)
 
 let writeExcel directoryName (tables: Table list) =
 
@@ -108,18 +156,17 @@ let writeExcel directoryName (tables: Table list) =
     let directory = Directory.CreateDirectory directoryName
 
     let createFile index table =
+
         let fileName =
             table.KontrahentNazwa
-            |> String.map
-                (function
-                | '/' -> ' '
-                | '\\' -> ' '
-                | notSpace -> notSpace)
+            |> replaceForbiddenWith ' '
+            |> normalizeWhiteSpace
+
 
         // let createdFileName =
-        //     sprintf "%s/%s_%d.xlsx" (directory.FullName) fileName (index + 1)
+        //     sprintf "%s\\%s_%d.xlsx" (directory.FullName) fileName (index + 1)
         let createdFileName =
-            sprintf "%s/%s.xlsx" (directory.FullName) fileName
+            sprintf "%s\\%s.xlsx" (directory.FullName) fileName
 
         let wb =
             Workbook(createdFileName, "Arkusz 1", WorkbookMetadata = Metadata(Application = "Microsoft Excel"))
@@ -135,23 +182,14 @@ let writeExcel directoryName (tables: Table list) =
 
     tables |> List.mapi createFile
 
-let createDictionary (filename: string) =
-    Text.Encoding.RegisterProvider(Text.CodePagesEncodingProvider.Instance)
+let createDictionary =
+    let doesNotMatter = 'D'
+    let skipLast (x, y, _) = (x, y)
 
-    let reader =
-        File.Open(filename, FileMode.Open, FileAccess.Read)
-        |> ExcelReaderFactory.CreateReader
-
-    let result = reader.AsDataSet()
-
-    let actualData =
-        seq<string * string> {
-            for row in result.Tables.[0].Rows do
-                let itemArray = row.ItemArray
-                yield (string itemArray.[2], string itemArray.[3])
-        }
-
-    actualData |> Seq.skip 2 |> Map.ofSeq
+    readExcelToSeq 'C' 'D' doesNotMatter
+    >> Seq.map skipLast
+    >> Seq.skip 2
+    >> Map.ofSeq
 
 let replaceNames map table =
     let updateRow row maybeEan =
@@ -166,12 +204,18 @@ let replaceNames map table =
     |> updateTable table
 
 let convert inputFile inputDict =
-    let dict = createDictionary inputDict
-    let tables = tablesFromExcel inputFile
+    try
+        let dict = createDictionary inputDict
+        let tables = tablesFromExcel inputFile
+        let directory = Path.GetDirectoryName inputFile
 
-    let directory = Path.GetDirectoryName inputFile
-
-    tables
-    |> List.map (replaceNames dict)
-    |> writeExcel (directory + "/zamienione")
-    |> Ok
+        tables
+        |> List.map (replaceNames dict)
+        |> writeExcel (directory + "/zamienione")
+        |> Ok
+    with
+    | :? IndexOutOfRangeException -> Error "incorrect file format"
+    | :? NanoXLSX.Exceptions.IOException as ex -> Error <| "Could not create file: " + ex.Message
+    | :? IOException as ex ->
+        Error
+        <| "Could not read one or more files: " + ex.Message
