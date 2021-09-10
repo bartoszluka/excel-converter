@@ -23,6 +23,14 @@ type Table =
       KontrahentEan: string
       Data: Row list }
 
+type SimpleTable = { Name: string; Data: Row list }
+
+let simpleTableOfTable table =
+    { Name = table.KontrahentNazwa
+      Data = table.Data }
+
+let newSimpleTable name rows = { Name = name; Data = rows }
+
 let rowOfPair (ean, count) = { Ean = ean; Count = int count }
 
 let newTable (arr: string []) (rowData: (string * string) list) =
@@ -70,7 +78,7 @@ let createTable rawInput =
 
     newTable metadata rows
 
-let readExcelToSeq column1 column2 column3 inputFile =
+let readExcelToSeq inputFile =
     // this is necessary for .NET Core to work
     Text.Encoding.RegisterProvider(Text.CodePagesEncodingProvider.Instance)
 
@@ -85,12 +93,86 @@ let readExcelToSeq column1 column2 column3 inputFile =
     // convert data set into a sequence
     seq {
         for row in dataSet.Tables.[0].Rows do
-            let s letter = string row.ItemArray.[toIndex letter]
-            yield (s column1, s column2, s column3)
+            yield Array.map string row.ItemArray
     }
 
+let takeColumns columnNames arrays =
+    let toIndex char = int (Char.ToUpper char) - int 'A'
+    let columns = List.map toIndex columnNames
+
+    arrays
+    |> Seq.map (
+        Array.indexed
+        >> Array.filter (fun (index, _) -> List.contains index columns)
+        >> Array.map snd
+    )
+
+let arrayToPair (arr: 'a array) = (arr.[0], arr.[1])
+let arrayToTriplet (arr: 'a array) = (arr.[0], arr.[1], arr.[2])
+
+let takeEveryNth n array =
+    array
+    |> Array.indexed
+    |> Array.choose
+        (fun (index, value) ->
+            if index % n = 0 then
+                Some value
+            else
+                None)
+
+let dropLast n array =
+    array |> Array.take (Array.length array - n)
+
+let tryInt str =
+    try
+        Int32.Parse str |> Some
+    with
+    | _ -> None
+
+let readExcelKakadu inputFile =
+    let rawData = readExcelToSeq inputFile
+
+    let products =
+        rawData
+        |> takeColumns [ 'B' ]
+        |> Seq.skip 2
+        |> Seq.map (fun arr -> string arr.[0])
+        |> Array.ofSeq
+
+    let weirdArrayToTable (arr: string array) =
+        let name = Array.head arr
+        let rest = Array.skip 2 arr
+        (name, rest)
+
+    let customers =
+        rawData
+        |> Seq.map (Array.skip 2 >> takeEveryNth 2 >> dropLast 2)
+        |> Array.transpose
+        |> Array.map (weirdArrayToTable)
+
+    let toRows (name, arrays) =
+        let toRow (ean, countOrEmpty) =
+            match tryInt countOrEmpty with
+            | Some int -> Some { Ean = ean; Count = int }
+            | None -> None
+
+        let rows = Array.choose toRow arrays
+
+        { Name = name
+          Data = List.ofArray rows }
+
+    customers
+    |> Array.map (
+        (fun (name, rest) -> (name, Array.zip products rest))
+        >> toRows
+    )
+    |> List.ofArray
+
+
 let tablesFromExcel =
-    readExcelToSeq 'B' 'C' 'F'
+    readExcelToSeq
+    >> takeColumns [ 'B'; 'C'; 'F' ]
+    >> Seq.map arrayToTriplet
     >> List.ofSeq
     >> splitInput isRowEmpty
     >> List.map createTable
@@ -146,7 +228,7 @@ let replaceForbiddenWith c =
         | Forbidden _ -> c
         | Safe char -> char)
 
-let writeExcel directoryName (tables: Table list) =
+let writeExcel directoryName (tables: SimpleTable list) =
 
     let addRow (wb: Workbook) (row: Row) : unit =
         wb.CurrentWorksheet.AddNextCell(row.Ean)
@@ -158,7 +240,7 @@ let writeExcel directoryName (tables: Table list) =
     let createFile index table =
 
         let fileName =
-            table.KontrahentNazwa
+            table.Name
             |> replaceForbiddenWith ' '
             |> normalizeWhiteSpace
 
@@ -183,11 +265,9 @@ let writeExcel directoryName (tables: Table list) =
     tables |> List.mapi createFile
 
 let createDictionary =
-    let doesNotMatter = 'D'
-    let skipLast (x, y, _) = (x, y)
-
-    readExcelToSeq 'C' 'D' doesNotMatter
-    >> Seq.map skipLast
+    readExcelToSeq
+    >> takeColumns [ 'C'; 'D' ]
+    >> Seq.map arrayToPair
     >> Seq.skip 2
     >> Map.ofSeq
 
@@ -197,7 +277,7 @@ let replaceNames map table =
         | None -> row
         | Some ean -> { row with Ean = ean }
 
-    let updateTable table newData = { table with Data = newData }
+    let updateTable (table: SimpleTable) newData = { table with Data = newData }
 
     table.Data
     |> List.map (fun row -> Map.tryFind row.Ean map |> updateRow row)
@@ -206,12 +286,35 @@ let replaceNames map table =
 let convert inputFile inputDict =
     try
         let dict = createDictionary inputDict
-        let tables = tablesFromExcel inputFile
+
+        let tables =
+            tablesFromExcel inputFile
+            |> List.map simpleTableOfTable
+
         let directory = Path.GetDirectoryName inputFile
 
         tables
         |> List.map (replaceNames dict)
         |> writeExcel (directory + "/zamienione")
+        |> Ok
+    with
+    | :? IndexOutOfRangeException -> Error "incorrect file format"
+    | :? NanoXLSX.Exceptions.IOException as ex -> Error <| "Could not create file: " + ex.Message
+    | :? IOException as ex ->
+        Error
+        <| "Could not read one or more files: " + ex.Message
+
+let convertKakadu inputFile inputDict =
+    try
+        let dict = createDictionary inputDict
+
+        let tables = readExcelKakadu inputFile
+
+        let directory = Path.GetDirectoryName inputFile
+
+        tables
+        |> List.map (replaceNames dict)
+        |> writeExcel (directory + "/zamienione2")
         |> Ok
     with
     | :? IndexOutOfRangeException -> Error "incorrect file format"
