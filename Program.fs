@@ -29,8 +29,6 @@ let simpleTableOfTable table =
     { Name = table.KontrahentNazwa
       Data = table.Data }
 
-let newSimpleTable name rows = { Name = name; Data = rows }
-
 let rowOfPair (ean, count) = { Ean = ean; Count = int count }
 
 let newTable (arr: string []) (rowData: (string * string) list) =
@@ -175,7 +173,7 @@ let tablesFromExcel =
     >> Seq.map arrayToTriplet
     >> List.ofSeq
     >> splitInput isRowEmpty
-    >> List.map createTable
+    >> List.map (createTable >> simpleTableOfTable)
 
 let normalizeWhiteSpace input =
     let toCharList =
@@ -283,32 +281,12 @@ let replaceNames map table =
     |> List.map (fun row -> Map.tryFind row.Ean map |> updateRow row)
     |> updateTable table
 
-let convert inputFile inputDict =
+
+let convertWith toTables inputFile inputDict =
     try
         let dict = createDictionary inputDict
 
-        let tables =
-            tablesFromExcel inputFile
-            |> List.map simpleTableOfTable
-
-        let directory = Path.GetDirectoryName inputFile
-
-        tables
-        |> List.map (replaceNames dict)
-        |> writeExcel (directory + "/zamienione")
-        |> Ok
-    with
-    | :? IndexOutOfRangeException -> Error "incorrect file format"
-    | :? NanoXLSX.Exceptions.IOException as ex -> Error <| "Could not create file: " + ex.Message
-    | :? IOException as ex ->
-        Error
-        <| "Could not read one or more files: " + ex.Message
-
-let convertKakadu inputFile inputDict =
-    try
-        let dict = createDictionary inputDict
-
-        let tables = readExcelKakadu inputFile
+        let tables = toTables inputFile
 
         let directory = Path.GetDirectoryName inputFile
 
@@ -322,3 +300,7 @@ let convertKakadu inputFile inputDict =
     | :? IOException as ex ->
         Error
         <| "Could not read one or more files: " + ex.Message
+
+let convertKakadu = convertWith readExcelKakadu
+
+let convert = convertWith tablesFromExcel
