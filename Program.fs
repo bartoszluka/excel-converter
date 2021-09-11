@@ -4,6 +4,7 @@ open NanoXLSX
 open System
 open System.IO
 open ExcelDataReader
+open Strings
 
 type Row = { Ean: string; Count: int }
 
@@ -119,7 +120,10 @@ let takeEveryNth n array =
                 None)
 
 let dropLast n array =
-    array |> Array.take (Array.length array - n)
+    try
+        array |> Array.take (Array.length array - n)
+    with
+    | _ -> [||]
 
 let tryInt str =
     try
@@ -175,57 +179,6 @@ let tablesFromExcel =
     >> splitInput isRowEmpty
     >> List.map (createTable >> simpleTableOfTable)
 
-let normalizeWhiteSpace input =
-    let toCharList =
-        function
-        | str when String.IsNullOrEmpty str -> []
-        | str -> str.ToCharArray() |> List.ofArray
-
-    let foldr folder list state = List.foldBack folder state list
-    let lastChar (str: string) = str.[str.Length - 1]
-
-    let bothWhiteSpace x y =
-        Char.IsWhiteSpace x && Char.IsWhiteSpace y
-
-    match toCharList input with
-    | [] -> ""
-    | first :: rest ->
-        string first
-        + (first :: rest
-           |> List.pairwise
-           |> List.fold
-               (fun acc (x, y) ->
-                   if bothWhiteSpace x y then
-                       acc
-                   else
-                       acc + (string y))
-               "")
-
-let replaceForbiddenWith c =
-    let forbiddenChars =
-        [ '<'
-          '>'
-          ':'
-          '\"'
-          '/'
-          '\\'
-          '|'
-          '?'
-          '*' ]
-
-    let inline (?<) item list = List.contains item list
-
-    let (|Forbidden|Safe|) char =
-        if char ?< forbiddenChars then
-            Forbidden char
-        else
-            Safe char
-
-    String.map
-        (function
-        | Forbidden _ -> c
-        | Safe char -> char)
-
 let writeExcel directoryName (tables: SimpleTable list) =
 
     let addRow (wb: Workbook) (row: Row) : unit =
@@ -235,16 +188,13 @@ let writeExcel directoryName (tables: SimpleTable list) =
 
     let directory = Directory.CreateDirectory directoryName
 
-    let createFile index table =
+    let createFile table =
 
         let fileName =
             table.Name
             |> replaceForbiddenWith ' '
             |> normalizeWhiteSpace
 
-
-        // let createdFileName =
-        //     sprintf "%s\\%s_%d.xlsx" (directory.FullName) fileName (index + 1)
         let createdFileName =
             sprintf "%s\\%s.xlsx" (directory.FullName) fileName
 
@@ -260,7 +210,7 @@ let writeExcel directoryName (tables: SimpleTable list) =
         wb.Save()
         createdFileName
 
-    tables |> List.mapi createFile
+    tables |> List.map createFile
 
 let createDictionary =
     readExcelToSeq
@@ -282,7 +232,7 @@ let replaceNames map table =
     |> updateTable table
 
 
-let convertWith toTables inputFile inputDict =
+let convertWith toTables (inputFile: string) inputDict =
     try
         let dict = createDictionary inputDict
 
@@ -292,7 +242,7 @@ let convertWith toTables inputFile inputDict =
 
         tables
         |> List.map (replaceNames dict)
-        |> writeExcel (directory + "/zamienione2")
+        |> writeExcel (directory + "/zamienione")
         |> Ok
     with
     | :? IndexOutOfRangeException -> Error "incorrect file format"
