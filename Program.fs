@@ -5,6 +5,7 @@ open System
 open System.IO
 open ExcelDataReader
 open Strings
+open System.Diagnostics
 
 type Row = { Ean: string; Count: int }
 
@@ -132,8 +133,10 @@ let tryInt str =
     | _ -> None
 
 let readExcelKakadu inputFile =
+    // 94 ms
     let rawData = readExcelToSeq inputFile
 
+    // 7 ms
     let products =
         rawData
         |> takeColumns [ 'B' ]
@@ -141,16 +144,20 @@ let readExcelKakadu inputFile =
         |> Seq.map (fun arr -> string arr.[0])
         |> Array.ofSeq
 
+
     let weirdArrayToTable (arr: string array) =
         let name = Array.head arr
         let rest = Array.skip 2 arr
         (name, rest)
 
+
+    // 5 ms
     let customers =
         rawData
         |> Seq.map (Array.skip 2 >> takeEveryNth 2 >> dropLast 2)
         |> Array.transpose
         |> Array.map (weirdArrayToTable)
+
 
     let toRows (name, arrays) =
         let toRow (ean, countOrEmpty) =
@@ -163,11 +170,11 @@ let readExcelKakadu inputFile =
         { Name = name
           Data = List.ofArray rows }
 
+    let joinProductsAndCustomers (name, rest) = (name, Array.zip products rest)
+
+    // 49 ms
     customers
-    |> Array.map (
-        (fun (name, rest) -> (name, Array.zip products rest))
-        >> toRows
-    )
+    |> Array.map (joinProductsAndCustomers >> toRows)
     |> List.ofArray
 
 
@@ -232,18 +239,25 @@ let replaceNames map table =
     |> updateTable table
 
 
+
 let convertWith toTables (inputFile: string) inputDict =
     try
-        let dict = createDictionary inputDict
-
+        // 168 ms
         let tables = toTables inputFile
+
+        // 28 ms
+        let dict = createDictionary inputDict
 
         let directory = Path.GetDirectoryName inputFile
 
+        // 141 ms
         tables
         |> List.map (replaceNames dict)
         |> writeExcel (directory + "/zamienione")
         |> Ok
+
+    // everything lasts 343 ms
+
     with
     | :? IndexOutOfRangeException -> Error "incorrect file format"
     | :? NanoXLSX.Exceptions.IOException as ex -> Error <| "Could not create file: " + ex.Message
