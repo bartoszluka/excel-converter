@@ -5,7 +5,6 @@ open System
 open System.IO
 open ExcelDataReader
 open Strings
-open System.Diagnostics
 
 type Row = { Ean: string; Count: int }
 
@@ -110,30 +109,21 @@ let takeColumns columnNames arrays =
 let arrayToPair (arr: 'a array) = (arr.[0], arr.[1])
 let arrayToTriplet (arr: 'a array) = (arr.[0], arr.[1], arr.[2])
 
-let takeEveryNth n =
-    Seq.indexed
-    >> Seq.choose
+let takeEveryNth n array =
+    array
+    |> Array.indexed
+    |> Array.choose
         (fun (index, value) ->
             if index % n = 0 then
                 Some value
             else
                 None)
 
-// let takeEveryNth n array =
-//     array
-//     |> Array.indexed
-//     |> Array.choose
-//         (fun (index, value) ->
-//             if index % n = 0 then
-//                 Some value
-//             else
-//                 None)
-
-let dropLast n seq =
+let dropLast n array =
     try
-        seq |> Seq.take (Seq.length seq - n)
+        array |> Array.take (Array.length array - n)
     with
-    | _ -> Seq.empty
+    | _ -> [||]
 
 let tryInt str =
     try
@@ -143,47 +133,42 @@ let tryInt str =
 
 let readExcelKakadu inputFile =
     let rawData = readExcelToSeq inputFile
-    let stopwatch = Stopwatch()
-    stopwatch.Start()
 
     let products =
         rawData
         |> takeColumns [ 'B' ]
         |> Seq.skip 2
         |> Seq.map (fun arr -> string arr.[0])
+        |> Array.ofSeq
 
-    let weirdSeqToTable (arr: string seq) =
-        let name = Seq.head arr
-        let rest = Seq.skip 2 arr
+    let weirdArrayToTable (arr: string array) =
+        let name = Array.head arr
+        let rest = Array.skip 2 arr
         (name, rest)
 
     let customers =
         rawData
-        |> Seq.map (Seq.skip 2 >> takeEveryNth 2 >> dropLast 2)
-        |> Seq.transpose
-        |> Seq.map (weirdSeqToTable)
+        |> Seq.map (Array.skip 2 >> takeEveryNth 2 >> dropLast 2)
+        |> Array.transpose
+        |> Array.map (weirdArrayToTable)
 
-    let toRows (name, seqs) =
+    let toRows (name, arrays) =
         let toRow (ean, countOrEmpty) =
             match tryInt countOrEmpty with
             | Some int -> Some { Ean = ean; Count = int }
             | None -> None
 
-        let rows = Seq.choose toRow seqs
+        let rows = Array.choose toRow arrays
 
-        { Name = name; Data = List.ofSeq rows }
+        { Name = name
+          Data = List.ofArray rows }
 
-    let ret =
-        customers
-        |> Seq.map (
-            (fun (name, rest) -> (name, Seq.zip products rest))
-            >> toRows
-        )
-        |> List.ofSeq
-
-    stopwatch.Stop()
-    printfn "%i" (stopwatch.ElapsedMilliseconds)
-    ret
+    customers
+    |> Array.map (
+        (fun (name, rest) -> (name, Array.zip products rest))
+        >> toRows
+    )
+    |> List.ofArray
 
 
 let tablesFromExcel =
