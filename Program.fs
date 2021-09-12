@@ -5,11 +5,8 @@ open System
 open System.IO
 open ExcelDataReader
 open Strings
-open System.Diagnostics
 
 type Row = { Ean: string; Count: int }
-
-let newRow ean count = { Ean = ean; Count = count }
 
 type Table =
     { NumerZamowienia: string
@@ -206,10 +203,14 @@ let writeExcel directoryName (tables: SimpleTable list) =
             sprintf "%s\\%s.xlsx" (directory.FullName) fileName
 
         let wb =
-            Workbook(createdFileName, "Arkusz 1", WorkbookMetadata = Metadata(Application = "Microsoft Excel"))
+            Workbook(
+                createdFileName,
+                "Arkusz 1",
+                WorkbookMetadata = Metadata(Creator = "Katarzyna Stasiak", Application = "Microsoft Excel")
+            )
 
-        wb.CurrentWorksheet.AddNextCell("KOD")
-        wb.CurrentWorksheet.AddNextCell("ILOŚĆ")
+        wb.CurrentWorksheet.AddNextCell("Kod")
+        wb.CurrentWorksheet.AddNextCell("Ilosc")
         wb.CurrentWorksheet.AddNextCell("jm")
         wb.CurrentWorksheet.GoToNextRow()
 
