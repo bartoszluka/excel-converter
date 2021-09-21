@@ -1,66 +1,71 @@
-open System
+let (|Even|Odd|) n = if n % 2 = 0 then Even n else Odd n
 
-let rec mapReduce map reduce =
-    function
-    | [] -> failwith "cannot use on empty array"
-    | [ x ] -> map x
-    | x :: xs -> reduce (map x) (mapReduce map reduce xs)
+let rec threeNplus1Terminating n =
+    seq {
+        yield n
 
-let rec tryMapReduce map reduce =
-    function
-    | [] -> None
-    | [ x ] -> Some <| map x
-    | x :: xs ->
-        match tryMapReduce map reduce xs with
-        | Some value -> Some <| reduce (map x) value
-        | None -> None
+        if n <> 1 then
 
-let allWhiteSpace =
-    tryMapReduce Char.IsWhiteSpace (&&)
-    >> Option.defaultValue true
+            yield!
+                match n with
+                | Even n -> threeNplus1Terminating (n / 2)
+                | Odd n -> threeNplus1Terminating (3 * n + 1)
+    }
 
-let rec removeExcessiveSpaces chars =
-    let isSpace = Char.IsWhiteSpace
+let rec threeNplus1Inf n =
+    seq {
+        yield n
 
-    match chars with
-    | [] -> []
-    | [ x ] -> if isSpace x then [] else [ x ]
-    | x :: y :: rest ->
-        match isSpace x, isSpace y with
-        | true, true -> removeExcessiveSpaces (y :: rest)
-        | _ -> x :: removeExcessiveSpaces (y :: rest)
+        yield!
+            match n with
+            | Even n -> threeNplus1Inf (n / 2)
+            | Odd n -> threeNplus1Inf (3 * n + 1)
+    }
 
-let rec trimWhiteSpaceFront =
-    function
-    | [] -> []
-    | x :: xs ->
-        if Char.IsWhiteSpace x then
-            trimWhiteSpaceFront xs
-        else
-            x :: xs
+let rec pseudoFib n m =
+    seq {
+        yield n
+        yield! pseudoFib m (n + m)
+    }
 
-let toCharList =
-    function
-    | str when String.IsNullOrEmpty str -> []
-    | str -> str.ToCharArray() |> List.ofArray
+let fibonacci = pseudoFib 0 1
+let fibonacciNth n = fibonacci |> Seq.take n |> Seq.last
 
-let toString =
-    tryMapReduce string (+) >> Option.defaultValue ""
+let min a b = if a < b then a else b
+let max a b = if a > b then a else b
 
-let normalizeWhiteSpace =
-    toCharList
-    >> trimWhiteSpaceFront
-    >> removeExcessiveSpaces
-    >> toString
+let rec gcd n m =
+    let bigger = max n m
+    let smaller = min n m
 
-printfn "%b" (normalizeWhiteSpace "a               b" = "a b")
-printfn "%b" (normalizeWhiteSpace "               b" = "b")
-printfn "%b" (normalizeWhiteSpace "a    c   d     b" = "a c d b")
-printfn "%b" (normalizeWhiteSpace "a               " = "a")
-printfn "%b" (normalizeWhiteSpace "   a               " = "a")
-// "a b"
-// |> toCharList
-// |> trimWhiteSpaceFront
-// |> toString
-// |> (=) "a b"
-// |> printfn "%b"
+    match smaller with
+    | 0 -> bigger
+    | 1 -> 1
+    | _ -> gcd smaller (bigger - smaller)
+
+let fork binary unary1 unary2 x = binary (unary1 x) (unary2 x)
+
+let numbers = [ 1 .. 100000 ]
+
+let lengths =
+    List.map (threeNplus1Terminating >> Seq.length)
+
+let maxElement =
+    List.map (threeNplus1Terminating >> Seq.max)
+
+// numbers
+// |> fork List.zip id maxElement
+// |> List.maxBy snd
+// |> printfn "%O"
+
+// let pair x y = (x, y)
+
+// pseudoFib 0 1
+// |> Seq.takeWhile ((>) 1_000_000)
+// |> fork pair Seq.last Seq.length
+// |> printfn "%O"
+
+// gcd 60 12 |> printfn "%i"
+// gcd 50 200 |> printfn "%i"
+
+fibonacciNth 9 |> printfn "%i"

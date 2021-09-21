@@ -4,7 +4,7 @@ open NanoXLSX
 open System
 open System.IO
 open ExcelDataReader
-open Strings
+open Helpers.String
 
 type Row = { Ean: string; Count: int }
 
