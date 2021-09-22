@@ -4,7 +4,6 @@ open NanoXLSX
 open System
 open System.IO
 open ExcelDataReader
-open Helpers.String
 
 type Row = { Ean: string; Count: int }
 
@@ -28,7 +27,9 @@ let simpleTableOfTable table =
     { Name = table.KontrahentNazwa
       Data = table.Data }
 
-let rowOfPair (ean, count) = { Ean = ean; Count = int count }
+let newRow ean count = { Ean = ean; Count = int count }
+// let rowOfPair (ean, count) = { Ean = ean; Count = int count }
+let rowOfPair = Tuple.applyPair newRow
 
 let newTable (arr: string []) (rowData: (string * string) list) =
     { NumerZamowienia = arr.[0]
@@ -196,8 +197,8 @@ let writeExcel directoryName (tables: SimpleTable list) =
 
         let fileName =
             table.Name
-            |> replaceForbiddenWith ' '
-            |> normalizeWhiteSpace
+            |> String.replaceForbiddenWith ' '
+            |> String.normalizeWhiteSpace
 
         let createdFileName =
             sprintf "%s\\%s.xlsx" (directory.FullName) fileName
