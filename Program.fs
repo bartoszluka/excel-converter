@@ -28,7 +28,6 @@ let simpleTableOfTable table =
       Data = table.Data }
 
 let newRow ean count = { Ean = ean; Count = int count }
-// let rowOfPair (ean, count) = { Ean = ean; Count = int count }
 let rowOfPair = Tuple.applyPair newRow
 
 let newTable (arr: string []) (rowData: (string * string) list) =
