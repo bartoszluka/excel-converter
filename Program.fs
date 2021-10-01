@@ -205,12 +205,12 @@ let writeExcel directoryName (tables: SimpleTable list) =
         let wb =
             Workbook(
                 createdFileName,
-                "Arkusz 1",
+                "Arkusz1",
                 WorkbookMetadata = Metadata(Creator = "Katarzyna Stasiak", Application = "Microsoft Excel")
             )
 
-        wb.CurrentWorksheet.AddNextCell("Kod")
-        wb.CurrentWorksheet.AddNextCell("Ilosc")
+        wb.CurrentWorksheet.AddNextCell("KOD")
+        wb.CurrentWorksheet.AddNextCell("ILOŚĆ")
         wb.CurrentWorksheet.AddNextCell("jm")
         wb.CurrentWorksheet.GoToNextRow()
 
