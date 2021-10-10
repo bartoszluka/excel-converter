@@ -2,6 +2,12 @@ namespace System
 
 module List =
 
+    let splitAtSafe index list =
+        match index with
+        | _negative when index < 0 -> ([], list)
+        | _tooBig when index > List.length list -> (list, [])
+        | _ -> List.splitAt index list
+
     let rec foldr folding state =
         function
         | [] -> state
@@ -27,6 +33,12 @@ module List =
                 | other -> item :: sep :: (intersperse sep other))
             []
 
+    let any pred = mapReduce pred (||)
+    let tryAny pred = tryMapReduce pred (||)
+
+    let all pred = mapReduce pred (&&)
+    let tryAll pred = tryMapReduce pred (&&)
+
 // let intersperse sep ls =
 //     List.foldBack
 //         (fun x ->
@@ -39,6 +51,7 @@ module List =
 module Tuple =
     let pair x y = (x, y)
     let applyPair f (x, y) = f x y
+    let pairMap f (x, y) = (f x, f y)
 
 module Utils =
     let fork binary unary1 unary2 x = binary (unary1 x) (unary2 x)
@@ -124,3 +137,43 @@ module String =
     let startsWith (str: string) (superString: string) = superString.StartsWith str
 
     let endsWith (str: string) (superString: string) = superString.EndsWith str
+
+    let isAllUpperLetters =
+        toCharList
+        >> List.tryAll (fun x -> Char.IsLetter x && (Char.IsLower >> not) x)
+        >> Option.defaultValue false
+
+    let isAllLetters =
+        toCharList
+        >> List.tryAll Char.IsLetter
+        >> Option.defaultValue false
+
+    let isAllNumbers =
+        toCharList
+        >> List.tryAll Char.IsDigit
+        >> Option.defaultValue false
+
+    let isAllUpperLettersList =
+        List.tryAll (fun x -> Char.IsLetter x && (Char.IsLower >> not) x)
+        >> Option.defaultValue false
+
+    let isAllLettersList =
+        List.tryAll Char.IsLetter
+        >> Option.defaultValue false
+
+    let isAllNumbersList =
+        List.tryAll Char.IsDigit
+        >> Option.defaultValue false
+
+    let splitAt index =
+        toCharList
+        >> List.splitAt index
+        >> Tuple.pairMap toString
+
+
+module Array =
+    let any pred =
+        Array.tryFind pred
+        >> function
+            | Some _ -> true
+            | None -> false

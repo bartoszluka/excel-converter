@@ -134,26 +134,38 @@ let readExcelKakadu inputFile =
     let rawData = readExcelToSeq inputFile
 
     // 7 ms
-    let products =
+    let productsIndexed =
         rawData
         |> takeColumns [ 'B' ]
-        |> Seq.skip 2
-        |> Seq.map (fun arr -> string arr.[0])
+        |> Seq.map (Array.item 0 >> string)
+        |> Seq.indexed
+        |> Seq.skipWhile (snd >> String.isAllNumbers >> not)
         |> Array.ofSeq
 
+    let (indices, products) = Array.unzip productsIndexed
+    let dataStartRowNumber = Array.head indices |> int
 
-    let weirdArrayToTable (arr: string array) =
-        let name = Array.head arr
-        let rest = Array.skip 2 arr
+    let isCustomerCode (str: string) =
+        let (letters, numbers) =
+            str |> String.toCharList |> List.splitAtSafe 3
+
+        String.isAllNumbersList numbers
+        && String.isAllUpperLettersList letters
+
+
+    let weirdArrayToTable howManyToSkip (arr: string array) =
+        let name = Array.find isCustomerCode arr
+        let rest = Array.skip howManyToSkip arr
         (name, rest)
 
 
     // 5 ms
     let customers =
         rawData
-        |> Seq.map (Array.skip 2 >> takeEveryNth 2 >> dropLast 2)
+        |> Seq.map (Array.skip 2)
         |> Array.transpose
-        |> Array.map (weirdArrayToTable)
+        |> Array.filter (Array.any isCustomerCode)
+        |> Array.map (weirdArrayToTable dataStartRowNumber)
 
 
     let toRows (name, arrays) =
